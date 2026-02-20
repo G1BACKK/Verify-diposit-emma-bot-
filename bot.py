@@ -13,7 +13,7 @@ import io
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
+BOT_TOKEN = os.environ.get('8527068092:AAFz5nKNegs1RHUHITTzBCUA9RTqaj3zAq8')
 
 # Data store
 group_data = {}
