@@ -2,10 +2,13 @@ services:
   - type: web
     name: utr-bot
     runtime: python
+    region: oregon
+    plan: free
     buildCommand: |
+      apt-get update
+      apt-get install -y tesseract-ocr
       pip install --upgrade pip
       pip install -r requirements.txt
-      apt-get update && apt-get install -y tesseract-ocr
     startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
