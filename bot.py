@@ -2,16 +2,11 @@ import os
 import re
 import json
 import logging
-import sys
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+import cv2
+import numpy as np
 import pytesseract
-from PIL import Image
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import io
-import mimetypes
-
-# Fix for imghdr missing in Python 3.14
-import PIL.Image
-import PIL.Imaging
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -51,9 +46,15 @@ def photo_handler(update, context):
         file = context.bot.get_file(photo.file_id)
         img_bytes = file.download_as_bytearray()
         
-        # OCR using PIL directly
-        img = Image.open(io.BytesIO(img_bytes))
-        text = pytesseract.image_to_string(img)
+        # Convert to numpy array for OpenCV
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # OCR
+        text = pytesseract.image_to_string(gray)
         
         # Find 12-digit UTR
         numbers = re.findall(r'\d+', text)
