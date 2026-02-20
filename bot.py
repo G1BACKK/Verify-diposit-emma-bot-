@@ -1,68 +1,80 @@
 import os
 import re
 import json
-import sys
+import logging
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 import pytesseract
 from PIL import Image
 import io
 
-# Fix for Python 3.14
-if not hasattr(pytesseract, 'pytesseract'):
-    from pytesseract import pytesseract as pytesseract_core
-else:
-    pytesseract_core = pytesseract.pytesseract
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 
-# Set tesseract path
+# Tesseract path
 pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
+# Data store
 group_data = {}
 
+# Load data
 def load_data():
     global group_data
     try:
-        with open('/opt/render/project/src/data.json', 'r') as f:
+        with open('data.json', 'r') as f:
             group_data = json.load(f)
     except:
         group_data = {}
 
+# Save data
 def save_data():
-    with open('/opt/render/project/src/data.json', 'w') as f:
+    with open('data.json', 'w') as f:
         json.dump(group_data, f)
 
 load_data()
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    group_id = str(update.effective_chat.id)
-    
     try:
+        group_id = str(update.effective_chat.id)
+        user = update.effective_user
+        
+        logger.info(f"📸 Photo from {user.first_name}")
+        
+        # Download photo
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
         img_bytes = await file.download_as_bytearray()
         
+        # OCR
         img = Image.open(io.BytesIO(img_bytes))
         text = pytesseract.image_to_string(img)
         
-        nums = re.findall(r'\d+', text)
-        for num in nums:
+        # Find UTR
+        numbers = re.findall(r'\d+', text)
+        for num in numbers:
             if len(num) == 12:
+                # Save
                 if group_id not in group_data:
                     group_data[group_id] = []
                 
                 group_data[group_id].append({
                     'utr': num,
-                    'user': update.effective_user.first_name,
+                    'user': user.first_name,
+                    'user_id': user.id,
                     'time': str(update.message.date)
                 })
                 save_data()
                 
+                # Reply
                 await update.message.reply_text(f"✅ UTR: {num}")
+                logger.info(f"✅ UTR found: {num}")
                 return
+                
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
 
 async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = str(update.effective_chat.id)
@@ -73,16 +85,24 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 UTR Bot Active!\n\n"
         "Send screenshot with 12-digit UTR\n"
-        "Commands:\n"
-        "/stats - Total UTRs in group"
+        "/stats - Check total UTRs"
     )
 
-# App setup
-app = Application.builder().token(BOT_TOKEN).build()
-app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-app.add_handler(MessageHandler(filters.Regex('^/stats$'), stats_handler))
-app.add_handler(MessageHandler(filters.Regex('^/start$'), start_handler))
+def main():
+    """Main function"""
+    logger.info("🤖 Bot starting...")
+    
+    # Create application
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    # Add handlers
+    app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+    app.add_handler(MessageHandler(filters.Regex('^/stats$'), stats_handler))
+    app.add_handler(MessageHandler(filters.Regex('^/start$'), start_handler))
+    
+    # Start bot
+    logger.info("✅ Bot started!")
+    app.run_polling()
 
 if __name__ == "__main__":
-    print("🤖 Bot starting...")
-    app.run_polling()
+    main()
