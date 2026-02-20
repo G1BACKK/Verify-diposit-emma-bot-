@@ -2,10 +2,9 @@ import os
 import re
 import json
 import logging
-import cv2
-import numpy as np
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import pytesseract
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from PIL import Image
 import io
 
 # Logging
@@ -18,95 +17,64 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
 # Data store
-group_data = {}
+data = {}
 
-def load_data():
-    global group_data
+def load():
+    global data
     try:
-        with open('/tmp/data.json', 'r') as f:
-            group_data = json.load(f)
+        with open('data.json', 'r') as f:
+            data = json.load(f)
     except:
-        group_data = {}
+        data = {}
 
-def save_data():
-    with open('/tmp/data.json', 'w') as f:
-        json.dump(group_data, f)
+def save():
+    with open('data.json', 'w') as f:
+        json.dump(data, f)
 
-load_data()
+load()
 
-def photo_handler(update, context):
+def photo(update, context):
     try:
-        group_id = str(update.effective_chat.id)
-        user = update.effective_user
+        chat = str(update.effective_chat.id)
         
-        logger.info(f"📸 Photo from {user.first_name}")
-        
-        # Download photo
+        # Download
         photo = update.message.photo[-1]
         file = context.bot.get_file(photo.file_id)
         img_bytes = file.download_as_bytearray()
         
-        # Convert to numpy array for OpenCV
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        # Convert to grayscale
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
         # OCR
-        text = pytesseract.image_to_string(gray)
+        img = Image.open(io.BytesIO(img_bytes))
+        text = pytesseract.image_to_string(img)
         
-        # Find 12-digit UTR
-        numbers = re.findall(r'\d+', text)
-        for num in numbers:
+        # Find 12-digit
+        nums = re.findall(r'\d+', text)
+        for num in nums:
             if len(num) == 12:
-                # Save
-                if group_id not in group_data:
-                    group_data[group_id] = []
-                
-                group_data[group_id].append({
-                    'utr': num,
-                    'user': user.first_name,
-                    'time': str(update.message.date)
-                })
-                save_data()
-                
-                # Reply
-                update.message.reply_text(f"✅ UTR: {num}")
-                logger.info(f"UTR found: {num}")
+                if chat not in data:
+                    data[chat] = []
+                data[chat].append(num)
+                save()
+                update.message.reply_text(f"✅ {num}")
                 return
-                
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(e)
 
-def stats_handler(update, context):
-    group_id = str(update.effective_chat.id)
-    count = len(group_data.get(group_id, []))
-    update.message.reply_text(f"📊 Total UTRs: {count}")
+def stats(update, context):
+    chat = str(update.effective_chat.id)
+    c = len(data.get(chat, []))
+    update.message.reply_text(f"📊 {c}")
 
-def start_handler(update, context):
-    update.message.reply_text(
-        "🤖 UTR Bot Active!\n\n"
-        "Send screenshot with 12-digit UTR\n"
-        "/stats - Check total UTRs"
-    )
+def start(update, context):
+    update.message.reply_text("Send screenshot")
 
-def main():
-    logger.info("🤖 Bot starting...")
-    
-    # Create updater
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    # Add handlers
-    dp.add_handler(MessageHandler(Filters.photo, photo_handler))
-    dp.add_handler(CommandHandler("stats", stats_handler))
-    dp.add_handler(CommandHandler("start", start_handler))
-    
-    # Start
-    updater.start_polling()
-    logger.info("✅ Bot is running!")
-    updater.idle()
+# Main
+updater = Updater(BOT_TOKEN, use_context=True)
+dp = updater.dispatcher
+dp.add_handler(MessageHandler(Filters.photo, photo))
+dp.add_handler(CommandHandler("stats", stats))
+dp.add_handler(CommandHandler("start", start))
 
 if __name__ == "__main__":
-    main()
+    logger.info("Running...")
+    updater.start_polling()
+    updater.idle()
